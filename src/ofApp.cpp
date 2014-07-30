@@ -103,6 +103,7 @@ void ofApp::update(){
                     }
 
                     int z = 50;
+                    x += 450;
                     Circle * circle = new Circle();
 
                     circle->x = x;
@@ -125,7 +126,7 @@ void ofApp::draw(){
 
     if (setupMode) {
         ofSetHexColor(0xFFFFFF);
-        image.draw(0,0);
+        image.draw(450,0);
 
         ofPushStyle();
 		ofSetHexColor(0x000000);
@@ -136,7 +137,7 @@ void ofApp::draw(){
 		ofPopStyle();
     } else {
         ofSetColor(background);
-        ofRect(0, 0, screenWidth, screenHeight);
+        ofRect(450, 0, screenWidth, screenHeight);
 
         ofSetColor(circleColor);
 
@@ -162,6 +163,8 @@ void ofApp::draw(){
                 y = screenHeight - circleRadius - yMargin;
             }
 
+            x += 450;
+
             int radius = circleRadius;
             int z = 50;
             ofPushStyle();
@@ -171,16 +174,16 @@ void ofApp::draw(){
         }
 
 		ofSetHexColor(0xFF0000);
-		ofRect(screenWidth, 0, 150, 480);
+		ofRect(0, 0, 150, 480);
 		ofSetHexColor(0x00FF00);
-		ofRect(screenWidth + 150, 0, 150, 480);
+		ofRect(150, 0, 150, 480);
 		ofSetHexColor(0x0000FF);
-		ofRect(screenWidth + 300, 0, 150, 480);
+		ofRect(300, 0, 150, 480);
 
-		ofSetHexColor(0xFFFFFF);
-		verdana.drawString("Draw", screenWidth + 25, screenHeight/2);
-		verdana.drawString("Clear", screenWidth + 175, screenHeight/2);
-		verdana.drawString("Save", screenWidth + 325, screenHeight/2);
+		ofSetHexColor(0x000000);
+		verdana.drawString("Draw", 25, screenHeight/2);
+		verdana.drawString("Clear", 175, screenHeight/2);
+		verdana.drawString("Save", 325, screenHeight/2);
     }
 
 }
@@ -214,22 +217,24 @@ void ofApp::touchMoved(int x, int y, int id) {
 //--------------------------------------------------------------
 void ofApp::touchUp(int x, int y, int id) {
 
-	if (x < screenWidth && y < screenHeight) {
+	if (x > 450 && x < screenWidth+450 && y < screenHeight) { //Touching Video Feed
 		if (setupMode) {
+
 			setColor(x, y);
 			setupMode = false;
+
 
 		} else {
 			drawMode = false;
 			setupMode = true;
 		}
 	} else  if (!setupMode){
-		if (y < screenHeight && x < screenWidth + 150) {
+		if (y < screenHeight && x < 150) {
 			drawMode = !drawMode;
-		} else if (y < screenHeight && x < screenWidth + 300) {
+		} else if (y < screenHeight && x < 300) {
 			drawMode = false;
 			circles.clear();
-		} else if (y < screenHeight && x < screenWidth + 450) {
+		} else if (y < screenHeight && x < 450) {
 			saveImage();
 		}
 
@@ -349,6 +354,7 @@ void ofApp::saveImage() {
 }
 
 void ofApp::setColor(int x, int y) {
+	x -= 450;
     xLow = x - 5;
     xHigh = x + 5;
     yLow = y - 5;
@@ -396,13 +402,13 @@ void ofApp::setColor(int x, int y) {
     avgGreen = (minGreen + maxGreen)/2;
     avgBlue = (minBlue + maxBlue)/2;
 
-    minRed = avgRed - 25;
-    minGreen = avgGreen - 25;
-    minBlue = avgBlue - 25;
+    minRed = avgRed - 15;
+    minGreen = avgGreen - 15;
+    minBlue = avgBlue - 15;
 
-    maxRed = avgRed + 25;
-    maxGreen = avgGreen + 25;
-    maxBlue = avgBlue + 25;
+    maxRed = avgRed + 15;
+    maxGreen = avgGreen + 15;
+    maxBlue = avgBlue + 15;
 
     circleColor = ofColor(avgRed, avgGreen, avgBlue);
 
