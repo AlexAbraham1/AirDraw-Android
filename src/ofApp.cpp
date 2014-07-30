@@ -4,175 +4,187 @@
 void ofApp::setup() {
 	ofBackground(255, 255, 255);
 	ofSetLogLevel (OF_LOG_VERBOSE);
-	font.loadFont("verdana.ttf",72);
+	verdana.loadFont("verdana.ttf",25);
 
-	screenWidth = ofGetScreenWidth();
-	screenHeight = ofGetScreenHeight();
+	screenWidth = 640;
+	screenHeight = 480;
 
 	ofEnableDepthTest(); //Used to calculate where to draw elements based on Z index instead of order drawn
 
 	grabber = shared_ptr<ofVideoGrabber>(new ofVideoGrabber());
 	grabber->setPixelFormat(OF_PIXELS_RGB);
-	DEVICE_ID = 0;
+	DEVICE_ID = 1;
 	grabber->setDeviceID(DEVICE_ID);
 	grabber->initGrabber(screenWidth, screenHeight);
 
-	haarScaleFactor = screenWidth / 176;
+	image.allocate(screenWidth, screenHeight, OF_IMAGE_COLOR);
 
-	haarWidth = int(screenWidth / haarScaleFactor);
-	haarHeight = int(screenHeight / haarScaleFactor);
+	setupMode = true;
 
-	haarFinder.setup("right_eye.xml");
-	haarFinder.setNeighbors(1);
-	haarFinder.setScaleHaar(2);
+	circleRadius = 5;
+	xMargin = 25;
+	yMargin = 15;
 
-	colorCv.allocate(screenWidth, screenHeight);
-	colorCvSmall.allocate(haarWidth, haarHeight);
-	grayCv.allocate(haarWidth, haarHeight);
+	maxTimesDrawn = 1000;
 
-	firstRun = true;
+	minRed = minGreen = minBlue = 255;
 
-	minRadius = 10;
-	maxRadius = 50;
+	maxRed = maxGreen = maxBlue = 0;
 
-	maxTimesDrawn = 10;
+	avgRed = avgGreen = avgBlue = 0;
 
-	orientation = OF_ORIENTATION_90_LEFT;
+	background = ofColor(0,0,0);
+	circleColor = ofColor(avgRed, avgGreen, avgBlue);
 
-	percent = 50;
-
-	showPercent = false;
-
-	sidebarWidth = screenWidth/10;
-
-	ofxAccelerometer.setup();
+	drawMode = false;
+	resetCoordinates();
 }
 
 //--------------------------------------------------------------
-void ofApp::update() {
-	grabber->update();
-	if (grabber->isFrameNew()) {
+void ofApp::update(){
 
-		//Detect Eyes
-		image.setFromPixels(grabber->getPixelsRef());
-		//fixImageRotation(); //Temporarily disabled since it is too slow without restarting video grabber
+    grabber->update();
+    if (grabber->isFrameNew()) {
 
-		colorCv = image.getPixels();
-		colorCvSmall.scaleIntoMe(colorCv, CV_INTER_NN);
-		grayCv = colorCvSmall;
-		haarFinder.findHaarObjects(grayCv);
-		eyes = haarFinder.blobs;
+        resetCoordinates();
 
-		if (firstRun) {
-			int x = 0;
-			int y = 0;
+        image.setFromPixels(grabber->getPixelsRef());
+        image.mirror(false, true);
 
-			while (y <= screenHeight) {
+        if (!setupMode) {
 
-				int radius = int(minRadius+ static_cast<float>(rand())/ (static_cast<float>(RAND_MAX/ (maxRadius - minRadius))));
+            for (int x = 0; x < screenWidth; x++) {
+                for (int y = 0; y < screenHeight; y++) {
+                    ofColor color = image.getColor(x,y);
+                    float red = float(color.r);
+                    float green = float(color.g);
+                    float blue = float(color.b);
 
-				if (isBlankSpace(x, y)) {
-					Circle * circle = new Circle();
-
-					circle->x = x;
-					circle->y = y;
-
-					circle->radius = radius;
-
-					circles.push_back(circle);
-				}
-
-				x += minRadius;
-
-				if (x > screenWidth-sidebarWidth) {
-					x = 0;
-					y += minRadius;
-				}
-
-			}
-			firstRun = false;
-			fixZIndex();
-			cleanupCircles();
-
-			for(std::list<Circle*>::iterator circle = added_circles.begin(); circle != added_circles.end(); ++circle) {
-				if ((*circle)->timesDrawn > maxTimesDrawn) {
-					circle = added_circles.erase(circle);
-				}
-			}
-
-		}
+                    if (ofInRange(red, minRed, maxRed) &&
+                        ofInRange(green, minGreen, maxGreen) &&
+                        ofInRange(blue, minBlue, maxBlue)) {
 
 
-	}
+                        if (x < xLow) {
+                            xLow = x;
+                        }
+                        if (x > xHigh) {
+                            xHigh = x;
+                        }
+                        if (y < yLow) {
+                            yLow = y;
+                        }
+                        if (y > yHigh) {
+                            yHigh = y;
+                        }
+
+                    }
+
+
+                }
+            }
+
+            if (drawMode) {
+                if (colorFound()) {
+                    int x = (xLow + xHigh)/2;
+                    int y = (yLow + yHigh)/2;
+
+                    if (x < circleRadius) {
+                        x = circleRadius;
+                    }
+                    if (y < circleRadius + yMargin) {
+                        y = circleRadius + yMargin;
+                    }
+                    if (x > screenWidth - circleRadius - xMargin) {
+                        x = screenWidth - circleRadius - xMargin;
+                    }
+                    if (y > screenHeight - circleRadius - yMargin) {
+                        y = screenHeight - circleRadius - yMargin;
+                    }
+
+                    int z = 50;
+                    Circle * circle = new Circle();
+
+                    circle->x = x;
+                    circle->y = y;
+                    circle->z = z;
+                    circle->radius = circleRadius;
+                    circle->color = circleColor;
+
+                    circles.push_back(circle);
+                }
+            }
+
+        }
+    }
+
 }
 
 //--------------------------------------------------------------
-void ofApp::draw() {
-	ofSetHexColor(0xFFFFFF);
-	for (std::vector<Circle>::size_type i = 0; i != circles.size(); i++) {
-		Circle * circle = circles[i];
-		ofColor color = grabber->getPixelsRef().getColor(circle->x, circle->y);
-		circle->color = color;
-		circle->drawCircle();
-	}
+void ofApp::draw(){
 
-	for(std::list<Circle*>::iterator circle = added_circles.begin(); circle != added_circles.end(); ++circle) {
-		if ((*circle)->timesDrawn <= maxTimesDrawn) {
-			(*circle)->drawCircle();
-		}
-	}
+    if (setupMode) {
+        ofSetHexColor(0xFFFFFF);
+        image.draw(0,0);
 
+        ofPushStyle();
+		ofSetHexColor(0x000000);
+		verdana.drawString("Hold up the object you want to use and click on it.", 20, screenHeight + 30);
+		verdana.drawString("Make sure the object is a unique color.", 20, screenHeight + 60);
+		ofSetHexColor(0xFF0000);
+		verdana.drawString("'ESC': Quit AirDraw", 20, screenHeight + 90);
+		ofPopStyle();
+    } else {
+        ofSetColor(background);
+        ofRect(0, 0, screenWidth, screenHeight);
 
-	ofPushStyle();
+        ofSetColor(circleColor);
 
-	for (std::vector<ofxCvBlob>::size_type i = 0; i != eyes.size(); i++) {
-		ofxCvBlob& eye = eyes[i];
+        for (std::vector<Circle>::size_type i = 0; i != circles.size(); i++) {
+            Circle * circle = circles[i];
+            circle->drawCircle();
+        }
 
-		int x;
-		int y;
+        if (colorFound()) {
+            int x = (xLow + xHigh)/2;
+            int y = (yLow + yHigh)/2;
 
+            if (x < circleRadius) {
+                x = circleRadius;
+            }
+            if (y < circleRadius) {
+                y = circleRadius;
+            }
+            if (x > screenWidth - circleRadius - xMargin) {
+                x = screenWidth - circleRadius - xMargin;
+            }
+            if (y > screenHeight - circleRadius - yMargin) {
+                y = screenHeight - circleRadius - yMargin;
+            }
 
-		if (orientation == OF_ORIENTATION_DEFAULT) {
-			//Portrait Rightside Up
-			x = (eye.boundingRect.y + (eye.boundingRect.height/2)) * haarScaleFactor;
-			y = (haarHeight - (eye.boundingRect.x + (eye.boundingRect.width/2))) * haarScaleFactor;
+            int radius = circleRadius;
+            int z = 50;
+            ofPushStyle();
+            ofSetColor(circleColor);
+            ofCircle(x, y, z, radius);
+            ofPopStyle();
+        }
 
-			ofLog() << "ORIENTATION: Portrait";
-		} else if (orientation == OF_ORIENTATION_180) {
-			//Portrait Upside Down
-			x = (haarWidth - (eye.boundingRect.y + (eye.boundingRect.height/2))) * haarScaleFactor;
-			y = (eye.boundingRect.x + (eye.boundingRect.width/2)) * haarScaleFactor;
+		ofSetHexColor(0xFF0000);
+		ofRect(screenWidth, 0, 150, 480);
+		ofSetHexColor(0x00FF00);
+		ofRect(screenWidth + 150, 0, 150, 480);
+		ofSetHexColor(0x0000FF);
+		ofRect(screenWidth + 300, 0, 150, 480);
 
-			ofLog() << "ORIENTATION: Portrait (Flipped)";
-		} else if (orientation == OF_ORIENTATION_90_RIGHT) {
-			//Landscape Right
-			x = (haarWidth - (eye.boundingRect.x + (eye.boundingRect.width/2))) * haarScaleFactor;
-			y = (haarHeight - (eye.boundingRect.y + (eye.boundingRect.height/2))) * haarScaleFactor;
-
-			ofLog() << "ORIENTATION: Landscape (Flipped)";
-		} else {
-			//Landscape
-			x = (eye.boundingRect.x + (eye.boundingRect.width/2)) * haarScaleFactor;
-			y = (eye.boundingRect.y + (eye.boundingRect.height/2)) * haarScaleFactor;
-
-			ofLog() << "ORIENTATION: Landscape";
-		}
-
-		int radius1 = eye.boundingRect.width;
-		ofEnableDepthTest();
-		ofSetColor(0, 0, 255);
-		ofCircle(x, y, 100, radius1);
-	}
-	ofPopStyle();
-
-	if (showPercent) {
 		ofSetHexColor(0xFFFFFF);
-		stringstream ss;
-		ss << percent;
-		font.drawString(ss.str(), screenWidth/2, screenHeight/2);
-		ss.str("");
-	}
+		verdana.drawString("Draw", screenWidth + 25, screenHeight/2);
+		verdana.drawString("Clear", screenWidth + 175, screenHeight/2);
+		verdana.drawString("Save", screenWidth + 325, screenHeight/2);
+    }
+
 }
+
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key) {
@@ -191,40 +203,38 @@ void ofApp::windowResized(int w, int h) {
 
 //--------------------------------------------------------------
 void ofApp::touchDown(int x, int y, int id) {
-	if (x < screenWidth-sidebarWidth) {
-		percent = ((x*100)/screenWidth) + minRadius;
-		if (percent > 100) {
-			percent = 100;
-		}
-		showPercent = true;
-	} else {
-		showPercent = false;
-	}
+
 }
 
 //--------------------------------------------------------------
 void ofApp::touchMoved(int x, int y, int id) {
 
-	if (x < screenWidth-sidebarWidth) {
-		percent = ((x*100)/screenWidth) + minRadius;
-		if (percent > 100) {
-			percent = 100;
-		}
-		showPercent = true;
-	} else {
-		showPercent = false;
-	}
 }
 
 //--------------------------------------------------------------
 void ofApp::touchUp(int x, int y, int id) {
 
-	if (x < screenWidth-sidebarWidth) {
-		showPercent = false;
-		maxRadius = percent;
-		circles.clear();
-		firstRun = true;
+	if (x < screenWidth && y < screenHeight) {
+		if (setupMode) {
+			setColor(x, y);
+			setupMode = false;
+
+		} else {
+			drawMode = false;
+			setupMode = true;
+		}
+	} else  if (!setupMode){
+		if (y < screenHeight && x < screenWidth + 150) {
+			drawMode = !drawMode;
+		} else if (y < screenHeight && x < screenWidth + 300) {
+			drawMode = false;
+			circles.clear();
+		} else if (y < screenHeight && x < screenWidth + 450) {
+			saveImage();
+		}
+
 	}
+
 }
 
 //--------------------------------------------------------------
@@ -284,113 +294,129 @@ void ofApp::cancelPressed() {
 }
 
 void ofApp::cleanupCircles() {
-	ofLog() << "cleanupCircles() started";
-	stringstream ss;
-	ss << circles.size();
-	ofLog() << "NUMBER OF CIRCLES: " + ss.str();
-	std::random_shuffle(circles.begin(), circles.end());
-	ofLog() << "cleanupCircles() ended";
-	ss.str("");
-	ss << circles.size();
-	ofLog() << "NUMBER OF CIRCLES: " + ss.str();
+    ofLog() << "cleanupCircles() started";
+    stringstream ss;
+    ss << circles.size();
+    ofLog() << "NUMBER OF CIRCLES: " + ss.str();
+    std::random_shuffle(circles.begin(), circles.end());
+    ofLog() << "cleanupCircles() ended";
+    ss.str("");
+    ss << circles.size();
+    ofLog() << "NUMBER OF CIRCLES: " + ss.str();
 }
 
 bool ofApp::isBlankSpace(int x, int y) {
-	for (std::vector<Circle>::size_type i = 0; i != circles.size(); i++) {
+    for (std::vector<Circle>::size_type i = 0; i != circles.size(); i++) {
 
-		Circle * circle = circles[i];
+        Circle * circle = circles[i];
 
-		float x2 = pow((circle->x - x), 2);
-		float y2 = pow((circle->y - y), 2);
-		float radius2 = pow((circle->radius), 2);
 
-		if ((x2 + y2) < (radius2)/2) {
-			return false;
-		}
 
-	}
-	return true;
+        float x2 = static_cast<int>(pow(static_cast<double>(circle->x - x), 2)+.005);
+        float y2 = static_cast<int>(pow(static_cast<double>(circle->y - y), 2)+.005);
+        float radius2 = static_cast<int>(pow(static_cast<double>(circle->radius), 2)+.005);
+
+        if ((x2 + y2) < (radius2)/2) {
+            return false;
+        }
+
+    }
+    return true;
 
 }
 
-void ofApp::fixZIndex() {
-	for (std::vector<Circle>::size_type i = 0; i != circles.size(); i++) {
-		Circle * circle = circles[i];
+void ofApp::resetCoordinates() {
+    xLow = screenWidth;
+    xHigh = 0;
+    yLow = screenHeight;
+    yHigh = 0;
+}
 
-		float smallRadius = (minRadius + ((minRadius + maxRadius)/2))/2;
-		if (circle->radius <= smallRadius) {
-			circle->z = 50;
-		}
-	}
+bool ofApp::colorFound() {
+    return (xLow != screenWidth && xHigh != 0 && yLow != screenHeight && yHigh != 0);
 }
 
 void ofApp::saveImage() {
 	stringstream ss;
 	ss << ofGetElapsedTimef();
-	string name = "../../../../DCIM/HungryCircles/" + ss.str() + ".png";
-	ofSaveScreen(name);
-	image.loadImage(name);
-	fixImageRotation();
-	image.saveImage(name);
+	string filename = "../../../../DCIM/AirDraw/" + ss.str() + ".png";
+    ofSaveScreen(filename);
+    image.loadImage(filename);
+    image.crop(0, 0, screenWidth, screenHeight);
+    image.saveImage(filename);
 
-	ofxAndroidToast("Image Saved");
+    ofxAndroidToast("Drawing Saved");
 }
 
-void ofApp::touchCircle(int x, int y) {
-	int red = int(0+ static_cast<float>(rand())/ (static_cast<float>(RAND_MAX/ (255 - 0))));
-	int green = int(0+ static_cast<float>(rand())/ (static_cast<float>(RAND_MAX/ (255 - 0))));
-	int blue = int(0+ static_cast<float>(rand())/ (static_cast<float>(RAND_MAX/ (255 - 0))));
-	int radius = int(minRadius+ static_cast<float>(rand())/ (static_cast<float>(RAND_MAX/ (maxRadius - minRadius))));
-	ofColor color = ofColor(red, green, blue);
+void ofApp::setColor(int x, int y) {
+    xLow = x - 5;
+    xHigh = x + 5;
+    yLow = y - 5;
+    yHigh = y + 5;
 
-	Circle * circle = new Circle();
+    minRed = 255;
+    minGreen = 255;
+    minBlue = 255;
+    maxRed = 0;
+    maxGreen = 0;
+    maxBlue = 0;
 
-	circle->x = x;
-	circle->y = y;
-	circle->radius = radius;
-	circle->z = 200;
-	circle->color = color;
+    for (int a = xLow; a < xHigh; a++) {
+        for (int b = yLow; b < yHigh; b++) {
+            ofColor color = image.getColor(a,b);
+            float red = float(color.r);
+            float green = float(color.g);
+            float blue = float(color.b);
 
-	added_circles.push_back(circle);
+            if (red < minRed) {
+                minRed = red;
+            }
+            if (green < minGreen) {
+                minGreen = green;
+            }
+            if (blue < minBlue) {
+                minBlue = blue;
+            }
+
+            if (red > maxRed) {
+                maxRed = red;
+            }
+            if (green > maxGreen) {
+                maxGreen = green;
+            }
+            if (blue > maxBlue) {
+                maxBlue = blue;
+            }
+
+
+        }
+    }
+
+    avgRed = (minRed + maxRed)/2;
+    avgGreen = (minGreen + maxGreen)/2;
+    avgBlue = (minBlue + maxBlue)/2;
+
+    minRed = avgRed - 25;
+    minGreen = avgGreen - 25;
+    minBlue = avgBlue - 25;
+
+    maxRed = avgRed + 25;
+    maxGreen = avgGreen + 25;
+    maxBlue = avgBlue + 25;
+
+    circleColor = ofColor(avgRed, avgGreen, avgBlue);
+
+    ofLogNotice() << "minRed: " << minRed << ", minGreen: " << minGreen << ", minBlue: " << minBlue;
+    ofLogNotice() << "maxRed: " << maxRed << ", maxGreen: " << maxGreen << ", maxBlue: " << maxBlue;
+
+    resetCoordinates();
 }
 
-void ofApp::fixImageRotation() {
-	ofVec3f accel = ofxAccelerometer.getForce();
-	int oX = floor(accel.x + 0.5);
-	int oY = floor(accel.y + 0.5);
+void ofApp::changeBackground(bool selectedColor) {
+    if (selectedColor) {
+        background = circleColor;
+    } else {
+        background == ofColor(255,255,255) ? background = ofColor(0,0,0) : background = ofColor(255,255,255);
+    }
 
-	if (oX == 1 && oY == 0) {
-		image.rotate90(1);
-
-		colorCv.allocate(screenHeight, screenWidth);
-		colorCvSmall.allocate(haarHeight, haarWidth);
-		grayCv.allocate(haarHeight, haarWidth);
-
-		orientation = OF_ORIENTATION_DEFAULT;
-
-	} else if (oX == -1 && oY == 0) {
-		image.rotate90(3);
-
-		colorCv.allocate(screenHeight, screenWidth);
-		colorCvSmall.allocate(haarHeight, haarWidth);
-		grayCv.allocate(haarHeight, haarWidth);
-
-		orientation = OF_ORIENTATION_180;
-
-	} else if (oX == 0 && oY == 1) {
-		image.rotate90(2);
-
-		colorCv.allocate(screenWidth, screenHeight);
-		colorCvSmall.allocate(haarWidth, haarHeight);
-		grayCv.allocate(haarWidth, haarHeight);
-
-		orientation = OF_ORIENTATION_90_RIGHT;
-
-	} else {
-		colorCv.allocate(screenWidth, screenHeight);
-		colorCvSmall.allocate(haarWidth, haarHeight);
-		grayCv.allocate(haarWidth, haarHeight);
-
-		orientation = OF_ORIENTATION_90_LEFT;
-	}
 }
